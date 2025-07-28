@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Alarm Dashboard</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f5f7fa;
+      padding: 2rem;
+      margin: 0;
+      color: #333;
+    }
+
+    .filter-row {
+      width: 95%;
+      margin: 1rem auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: flex-end;
+      background: white;
+      padding: 1rem;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+    }
+
+    label {
+      font-weight: 500;
+      display: block;
+      margin-bottom: 0.3rem;
+    }
+
+    input {
+      padding: 0.5rem 0.75rem;
+      font-size: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      min-width: 180px;
+      background-color: #fff;
+    }
+
+    button {
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      background-color: #ff9800;
+      color: white;
+      font-weight: bold;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .summary-box {
+      width: 95%;
+      margin: 1.5rem auto 0.5rem auto;
+      padding: 1rem 1.5rem;
+      background: #ffffff;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+      border-radius: 10px;
+      font-size: 1.05rem;
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      color: #333;
+    }
+
+    .summary-box span {
+      font-weight: bold;
+      color: #ff5722;
+    }
+
+    table {
+      width: 95%;
+      margin: 2rem auto;
+      border-collapse: collapse;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+      background: #fff;
+    }
+
+    th, td {
+      padding: 0.85rem 1rem;
+      text-align: center;
+      border-bottom: 1px solid #ddd;
+    }
+
+    thead th {
+      background-color: #ffd700;
+      font-weight: 600;
+      color: #222;
+    }
+
+    tbody tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+
+    .error {
+      text-align: center;
+      color: red;
+      font-weight: bold;
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="filter-row">
+    <div>
+      <label for="startDate">Start</label>
+      <input type="date" id="startDate">
+    </div>
+    <div>
+      <label for="endDate">End</label>
+      <input type="date" id="endDate">
+    </div>
+    <div>
+      <button onclick="fetchAlarms()">Generate</button>
+    </div>
+  </div>
+
+  <div id="alarmSummary" class="summary-box">
+    <div style="flex: 1;">
+      <span>Total Alarms: <span id="totalAlarms">0</span></span>
+      &nbsp;|&nbsp;
+      <span>Most Frequent Alarm: <span id="mostFrequentCode">-</span></span>
+    </div>
+    <div>
+      <button onclick="downloadCSV()">Download CSV</button>
+    </div>
+  </div>
+
+  <table id="alarmTable">
+    <thead>
+      <tr>
+        <th>Sr.No.</th>
+        <th>Occurrence Time</th>
+        <th>Alarm Description</th>
+        <th>Alarm Code</th>      
+        <th>Alarm Level</th>
+      </tr>
+    </thead>
+    <tbody id="alarmTableBody">
+      <tr><td colspan="5">No alarms found</td></tr>
+    </tbody>
+  </table>
+
+  <p class="error" id="errorMsg"></p>
+
+  <script>
+    const jwt = new URLSearchParams(window.location.search).get("token");
+    const baseUrl = "https://thingsboard.cloud/api";
+    const deviceId = "991cf500-661a-11f0-90f1-775fee303094";
+    const startInput = document.getElementById("startDate");
+    const endInput = document.getElementById("endDate");
+    const tableBody = document.getElementById("alarmTableBody");
+    const errorMsg = document.getElementById("errorMsg");
+
+    function formatTimestamp(ts) {
+      const d = new Date(ts);
+      return `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+    }
+
+    async function fetchAlarms() {
+      tableBody.innerHTML = "<tr><td colspan='5'>Loading...</td></tr>";
+      errorMsg.textContent = "";
+
+      const startTs = new Date(startInput.value).getTime();
+      const endDate = new Date(endInput.value);
+      endDate.setHours(23, 59, 59, 999);
+      const endTs = endDate.getTime();
+
+      try {
+        const res = await fetch(`${baseUrl}/plugins/telemetry/DEVICE/${deviceId}/values/timeseries?keys=Alarm_Code,Alarm_Description,Alarm_Level&startTs=${startTs}&endTs=${endTs}&limit=1000&agg=NONE`, {
+          headers: { "X-Authorization": `Bearer ${jwt}` }
+        });
+        const json = await res.json();
+        const alarms = json.Alarm_Code?.map((item, i) => ({
+          code: item.value,
+          description: json.Alarm_Description?.[i]?.value || "-",
+          level: json.Alarm_Level?.[i]?.value || "-",
+          ts: item.ts
+        })) || [];
+
+        if (alarms.length === 0) {
+          tableBody.innerHTML = "<tr><td colspan='5'>No alarms found</td></tr>";
+          document.getElementById("totalAlarms").textContent = "0";
+          document.getElementById("mostFrequentCode").textContent = "-";
+          return;
+        }
+
+        document.getElementById("totalAlarms").textContent = alarms.length;
+        const freqMap = {};
+        alarms.forEach(a => { freqMap[a.code] = (freqMap[a.code] || 0) + 1; });
+        const mostFrequent = Object.entries(freqMap).sort((a, b) => b[1] - a[1])[0];
+        document.getElementById("mostFrequentCode").textContent = mostFrequent ? `${mostFrequent[0]} (${mostFrequent[1]} times)` : "-";
+
+        tableBody.innerHTML = "";
+        alarms.forEach((a, i) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${i + 1}</td>
+            <td>${formatTimestamp(a.ts)}</td>
+            <td>${a.description}</td>
+            <td>${a.code}</td>
+            <td>${a.level}</td>
+          `;
+          tableBody.appendChild(row);
+        });
+      } catch (err) {
+        console.error(err);
+        tableBody.innerHTML = "<tr><td colspan='5'>Failed to fetch alarms</td></tr>";
+        errorMsg.textContent = "Error loading data.";
+      }
+    }
+
+    function downloadCSV() {
+      const rows = [["Sr.No.", "Occurrence Time", "Alarm Description", "Alarm Code", "Alarm Level"]];
+      document.querySelectorAll("#alarmTable tbody tr").forEach(row => {
+        const cells = row.querySelectorAll("td");
+        if (cells.length === 5) {
+          rows.push([...cells].map(td => td.textContent.trim()));
+        }
+      });
+      const blob = new Blob([rows.map(r => r.join(",")).join("\n")], { type: "text/csv" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "alarms.csv";
+      link.click();
+    }
+  </script>
+
+</body>
+</html>
