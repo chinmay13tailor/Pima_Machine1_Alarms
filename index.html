@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>Alarm Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
@@ -11,46 +12,19 @@
       margin: 0;
       color: #333;
     }
-
     .filter-row {
       width: 95%;
       margin: 1rem auto;
       display: flex;
+      justify-content: flex-start;
       flex-wrap: wrap;
       gap: 1rem;
       align-items: flex-end;
       background: white;
-      padding: 1rem;
+      padding: 1rem 1rem;
       border-radius: 10px;
       box-shadow: 0 4px 10px rgba(0,0,0,0.08);
     }
-
-    label {
-      font-weight: 500;
-      display: block;
-      margin-bottom: 0.3rem;
-    }
-
-    input {
-      padding: 0.5rem 0.75rem;
-      font-size: 1rem;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      min-width: 180px;
-      background-color: #fff;
-    }
-
-    button {
-      padding: 0.6rem 1.2rem;
-      font-size: 1rem;
-      background-color: #ff9800;
-      color: white;
-      font-weight: bold;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-
     .summary-box {
       width: 95%;
       margin: 1.5rem auto 0.5rem auto;
@@ -64,12 +38,36 @@
       flex-wrap: wrap;
       color: #333;
     }
-
     .summary-box span {
       font-weight: bold;
       color: #ff5722;
     }
-
+    label {
+      font-weight: 500;
+      display: block;
+      margin-bottom: 0.3rem;
+    }
+    input {
+      padding: 0.5rem 0.75rem;
+      font-size: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      min-width: 180px;
+      background-color: #fff;
+    }
+    button {
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      background-color: #ff9800;
+      color: white;
+      font-weight: bold;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #e68900;
+    }
     table {
       width: 95%;
       margin: 2rem auto;
@@ -79,28 +77,44 @@
       box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
       background: #fff;
     }
-
     th, td {
       padding: 0.85rem 1rem;
       text-align: center;
       border-bottom: 1px solid #ddd;
     }
-
     thead th {
       background-color: #ffd700;
       font-weight: 600;
       color: #222;
     }
-
     tbody tr:nth-child(even) {
       background-color: #f9f9f9;
     }
-
+    tbody tr:hover {
+      background-color: #f0f8ff;
+    }
     .error {
       text-align: center;
       color: red;
       font-weight: bold;
       margin-top: 1rem;
+    }
+    @media (max-width: 768px) {
+      .filter-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      input {
+        min-width: 100%;
+      }
+      button {
+        width: 100%;
+        margin-top: 0.5rem;
+      }
+      .summary-box {
+        flex-direction: column;
+        gap: 0.5rem;
+      }
     }
   </style>
 </head>
@@ -120,7 +134,7 @@
     </div>
   </div>
 
-  <div id="alarmSummary" class="summary-box">
+  <div class="summary-box">
     <div style="flex: 1;">
       <span>Total Alarms: <span id="totalAlarms">0</span></span>
       &nbsp;|&nbsp;
@@ -131,20 +145,30 @@
     </div>
   </div>
 
-  <table id="alarmTable">
-    <thead>
-      <tr>
-        <th>Sr.No.</th>
-        <th>Occurrence Time</th>
-        <th>Alarm Description</th>
-        <th>Alarm Code</th>      
-        <th>Alarm Level</th>
-      </tr>
-    </thead>
-    <tbody id="alarmTableBody">
-      <tr><td colspan="5">No alarms found</td></tr>
-    </tbody>
-  </table>
+  <div style="text-align: right; margin: 1rem 2.5%;">
+    <button onclick="toggleView()" id="toggleBtn">Switch to Pareto Chart</button>
+  </div>
+
+  <div id="tableView">
+    <table id="alarmTable">
+      <thead>
+        <tr>
+          <th>Sr.No.</th>
+          <th>Occurance Time</th>
+          <th>Alarm Description</th>
+          <th>Alarm Code</th>      
+          <th>Alarm Level</th>
+        </tr>
+      </thead>
+      <tbody id="alarmTableBody">
+        <tr><td colspan="5">No alarms found</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div id="chartView" style="display: none;">
+    <div id="paretoChart" style="width: 95%; height: 400px; margin: auto;"></div>
+  </div>
 
   <p class="error" id="errorMsg"></p>
 
@@ -152,6 +176,8 @@
     const jwt = new URLSearchParams(window.location.search).get("token");
     const baseUrl = "https://thingsboard.cloud/api";
     const deviceId = "991cf500-661a-11f0-90f1-775fee303094";
+    let currentAlarms = [];
+
     const startInput = document.getElementById("startDate");
     const endInput = document.getElementById("endDate");
     const tableBody = document.getElementById("alarmTableBody");
@@ -159,7 +185,8 @@
 
     function formatTimestamp(ts) {
       const d = new Date(ts);
-      return `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+      const pad = num => num.toString().padStart(2, '0');
+      return `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     }
 
     async function fetchAlarms() {
@@ -175,6 +202,7 @@
         const res = await fetch(`${baseUrl}/plugins/telemetry/DEVICE/${deviceId}/values/timeseries?keys=Alarm_Code,Alarm_Description,Alarm_Level&startTs=${startTs}&endTs=${endTs}&limit=1000&agg=NONE`, {
           headers: { "X-Authorization": `Bearer ${jwt}` }
         });
+
         const json = await res.json();
         const alarms = json.Alarm_Code?.map((item, i) => ({
           code: item.value,
@@ -182,6 +210,8 @@
           level: json.Alarm_Level?.[i]?.value || "-",
           ts: item.ts
         })) || [];
+
+        currentAlarms = alarms;
 
         if (alarms.length === 0) {
           tableBody.innerHTML = "<tr><td colspan='5'>No alarms found</td></tr>";
@@ -194,7 +224,12 @@
         const freqMap = {};
         alarms.forEach(a => { freqMap[a.code] = (freqMap[a.code] || 0) + 1; });
         const mostFrequent = Object.entries(freqMap).sort((a, b) => b[1] - a[1])[0];
-        document.getElementById("mostFrequentCode").textContent = mostFrequent ? `${mostFrequent[0]} (${mostFrequent[1]} times)` : "-";
+        if (mostFrequent) {
+          const { code, description } = alarms.find(a => a.code === mostFrequent[0]);
+          document.getElementById("mostFrequentCode").textContent = `${description}, ${code} (${mostFrequent[1]} times)`;
+        } else {
+          document.getElementById("mostFrequentCode").textContent = "-";
+        }
 
         tableBody.innerHTML = "";
         alarms.forEach((a, i) => {
@@ -203,31 +238,103 @@
             <td>${i + 1}</td>
             <td>${formatTimestamp(a.ts)}</td>
             <td>${a.description}</td>
-            <td>${a.code}</td>
+            <td>${a.code}</td>  
             <td>${a.level}</td>
           `;
           tableBody.appendChild(row);
         });
+
       } catch (err) {
-        console.error(err);
+        console.error("Error fetching alarms:", err);
         tableBody.innerHTML = "<tr><td colspan='5'>Failed to fetch alarms</td></tr>";
-        errorMsg.textContent = "Error loading data.";
       }
     }
 
     function downloadCSV() {
       const rows = [["Sr.No.", "Occurrence Time", "Alarm Description", "Alarm Code", "Alarm Level"]];
-      document.querySelectorAll("#alarmTable tbody tr").forEach(row => {
+      document.querySelectorAll("#alarmTable tbody tr").forEach((row) => {
         const cells = row.querySelectorAll("td");
         if (cells.length === 5) {
-          rows.push([...cells].map(td => td.textContent.trim()));
+          const rowData = Array.from(cells).map(td => td.textContent.trim());
+          rows.push(rowData);
         }
       });
-      const blob = new Blob([rows.map(r => r.join(",")).join("\n")], { type: "text/csv" });
+      const csvContent = rows.map(e => e.join(",")).join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
       link.download = "alarms.csv";
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
+    }
+
+    function toggleView() {
+      const tableDiv = document.getElementById("tableView");
+      const chartDiv = document.getElementById("chartView");
+      const btn = document.getElementById("toggleBtn");
+
+      if (tableDiv.style.display === "none") {
+        tableDiv.style.display = "block";
+        chartDiv.style.display = "none";
+        btn.textContent = "Switch to Pareto Chart";
+      } else {
+        tableDiv.style.display = "none";
+        chartDiv.style.display = "block";
+        btn.textContent = "Switch to Table View";
+        drawParetoChart();
+      }
+    }
+
+    function drawParetoChart() {
+      const freqMap = {};
+      currentAlarms.forEach(a => {
+        freqMap[a.code] = (freqMap[a.code] || 0) + 1;
+      });
+
+      const data = Object.entries(freqMap).sort((a, b) => b[1] - a[1]);
+      const codes = data.map(d => d[0]);
+      const counts = data.map(d => d[1]);
+
+      const cumulative = counts.reduce((acc, val, i) => {
+        acc.push((acc[i - 1] || 0) + val);
+        return acc;
+      }, []);
+      const cumulativePct = cumulative.map(c => (c / cumulative[cumulative.length - 1]) * 100);
+
+      const trace1 = {
+        x: codes,
+        y: counts,
+        type: 'bar',
+        name: 'Frequency',
+        marker: { color: '#ffa500' }
+      };
+
+      const trace2 = {
+        x: codes,
+        y: cumulativePct,
+        yaxis: 'y2',
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: 'Cumulative %',
+        marker: { color: '#3366cc' }
+      };
+
+      const layout = {
+        title: 'Pareto Chart of Alarm Codes',
+        xaxis: { title: 'Alarm Code' },
+        yaxis: { title: 'Frequency' },
+        yaxis2: {
+          title: 'Cumulative %',
+          overlaying: 'y',
+          side: 'right',
+          range: [0, 100]
+        },
+        legend: { x: 0.8, y: 1.1 },
+        margin: { t: 40 }
+      };
+
+      Plotly.newPlot('paretoChart', [trace1, trace2], layout);
     }
   </script>
 
