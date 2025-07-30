@@ -5,13 +5,122 @@
   <title>Alarm & Downtime Dashboard</title>
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <style>
-    /* … your existing styles … */
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f5f7fa;
+      padding: 2rem;
+      margin: 0;
+      color: #333;
+    }
+    .filter-row {
+      width: 95%;
+      margin: 1rem auto;
+      display: flex;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: flex-end;
+      background: white;
+      padding: 1rem;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+    }
+    .summary-box {
+      width: 95%;
+      margin: 1.5rem auto 0.5rem;
+      padding: 1rem 1.5rem;
+      background: #ffffff;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+      border-radius: 10px;
+      font-size: 1.05rem;
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      color: #333;
+    }
+    .summary-box span {
+      font-weight: bold;
+      color: #ff5722;
+    }
+    label {
+      font-weight: 500;
+      display: block;
+      margin-bottom: 0.3rem;
+    }
+    input, select {
+      padding: 0.5rem 0.75rem;
+      font-size: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      min-width: 180px;
+      background-color: #fff;
+    }
+    button {
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      background-color: #ff9800;
+      color: white;
+      font-weight: bold;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #e68900;
+    }
+    table {
+      width: 95%;
+      margin: 2rem auto;
+      border-collapse: collapse;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+      background: #fff;
+    }
+    th, td {
+      padding: 0.85rem 1rem;
+      text-align: center;
+      border-bottom: 1px solid #ddd;
+    }
+    thead th {
+      background-color: #ffd700;
+      font-weight: 600;
+      color: #222;
+    }
+    tbody tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+    tbody tr:hover {
+      background-color: #f0f8ff;
+    }
+    .error {
+      text-align: center;
+      color: red;
+      font-weight: bold;
+      margin-top: 1rem;
+    }
+    @media (max-width: 768px) {
+      .filter-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      input, select {
+        min-width: 100%;
+      }
+      button {
+        width: 100%;
+        margin-top: 0.5rem;
+      }
+      .summary-box {
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+    }
   </style>
 </head>
 <body>
 
   <div class="filter-row">
-    <!-- View selector -->
     <div>
       <label for="viewSelect">View</label>
       <select id="viewSelect">
@@ -19,19 +128,14 @@
         <option value="downtime">Downtime</option>
       </select>
     </div>
-
-    <!-- Existing Start date -->
     <div>
       <label for="startDate">Start</label>
       <input type="date" id="startDate">
     </div>
-
-    <!-- Existing End date -->
     <div>
       <label for="endDate">End</label>
       <input type="date" id="endDate">
     </div>
-
     <div>
       <button onclick="fetchData()">Generate</button>
     </div>
@@ -52,9 +156,8 @@
     <button onclick="toggleView()" id="toggleBtn">Switch to Pareto Chart</button>
   </div>
 
-  <!-- TABLE VIEW -->
   <div id="tableView">
-    <table id="dataTable">
+    <table>
       <thead id="tableHead"></thead>
       <tbody id="tableBody">
         <tr><td colspan="5">Select “Generate” to load data</td></tr>
@@ -62,7 +165,6 @@
     </table>
   </div>
 
-  <!-- PARETO VIEW -->
   <div id="chartView" style="display: none;">
     <div id="paretoChart" style="width: 95%; height: 400px; margin: auto;"></div>
   </div>
@@ -70,10 +172,12 @@
   <p class="error" id="errorMsg"></p>
 
   <script>
-    const urlParams    = new URLSearchParams(window.location.search);
-    const jwt          = urlParams.get("token");
-    const deviceId     = urlParams.get("deviceId");
-    const baseUrl      = "https://thingsboard.cloud/api";
+    // Read JWT from URL, hard-code deviceId
+    const urlParams = new URLSearchParams(window.location.search);
+    const jwt       = urlParams.get('token');
+    const deviceId  = '991cf500-661a-11f0-90f1-775fee303094';
+    const baseUrl   = 'https://thingsboard.cloud/api';
+
     const viewSelect   = document.getElementById("viewSelect");
     const tableHead    = document.getElementById("tableHead");
     const tableBody    = document.getElementById("tableBody");
@@ -81,27 +185,23 @@
     const mostFreqEl   = document.getElementById("mostFrequent");
     let currentData    = [];
 
-    if (!jwt || !deviceId) {
-      document.body.innerHTML = '<div class="error">Error: token and deviceId are required in URL.</div>';
-      throw new Error('Missing token or deviceId');
+    if (!jwt) {
+      document.body.innerHTML =
+        '<div class="error">Error: token is required in the URL.</div>';
+      throw new Error('Missing token');
     }
 
     function getTelemetryKeys() {
-      if (viewSelect.value === 'alerts') {
-        return ['Alarm_Code','Alarm_Description','Alarm_Level'];
-      } else {
-        return ['Downtime_Start_Time','Downtime_End_Time','Downtime_Reason_Code','Downtime_Duration'];
-      }
+      return viewSelect.value === 'alerts'
+        ? ['Alarm_Code','Alarm_Description','Alarm_Level']
+        : ['Downtime_Start_Time','Downtime_End_Time','Downtime_Reason_Code','Downtime_Duration'];
     }
 
     function buildTableHead() {
       const mode = viewSelect.value;
-      let headers;
-      if (mode === 'alerts') {
-        headers = ['Sr.No.','Time','Description','Code','Level'];
-      } else {
-        headers = ['Sr.No.','Start Time','End Time','Reason Code','Duration(s)'];
-      }
+      const headers = mode === 'alerts'
+        ? ['Sr.No.','Time','Description','Code','Level']
+        : ['Sr.No.','Start Time','End Time','Reason Code','Duration(s)'];
       tableHead.innerHTML = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
     }
 
@@ -111,44 +211,39 @@
       currentData = [];
 
       const startTs = new Date(document.getElementById('startDate').value).getTime();
-      const end = new Date(document.getElementById('endDate').value);
+      const end    = new Date(document.getElementById('endDate').value);
       end.setHours(23,59,59,999);
       const endTs = end.getTime();
 
       const keys = getTelemetryKeys().join(',');
       try {
         const res = await fetch(
-          `${baseUrl}/plugins/telemetry/DEVICE/${deviceId}/values/timeseries?keys=${keys}` +
-          `&startTs=${startTs}&endTs=${endTs}&limit=1000&agg=NONE`,
+          `${baseUrl}/plugins/telemetry/DEVICE/${deviceId}/values/timeseries` +
+          `?keys=${keys}&startTs=${startTs}&endTs=${endTs}&limit=1000&agg=NONE`,
           { headers: { "X-Authorization": `Bearer ${jwt}` } }
         );
         const json = await res.json();
 
-        // transpose timeseries into array of records
+        // transpose into array of records
         const raw = {};
         getTelemetryKeys().forEach(k => raw[k] = json[k] || []);
         const len = raw[ Object.keys(raw)[0] ].length;
 
         for (let i=0; i<len; i++) {
-          const rec = { ts: raw[Object.keys(raw)[0]][i].ts };
-          Object.keys(raw).slice(1).forEach((k,j) => {
-            rec[k] = raw[k][i]?.value ?? '-';
-          });
-          // flatten for ease:
           if (viewSelect.value === 'alerts') {
             currentData.push({
-              ts: rec.ts,
-              description: rec['Alarm_Description'],
-              code:        rec['Alarm_Code'],
-              level:       rec['Alarm_Level']
+              ts:          raw['Alarm_Code'][i].ts,
+              description: raw['Alarm_Description'][i]?.value || '-',
+              code:        raw['Alarm_Code'][i]?.value || '-',
+              level:       raw['Alarm_Level'][i]?.value || '-'
             });
           } else {
             currentData.push({
-              ts:          rec.ts,
-              start:       rec['Downtime_Start_Time'],
-              end:         rec['Downtime_End_Time'],
-              reason:      rec['Downtime_Reason_Code'],
-              duration:    rec['Downtime_Duration']
+              ts:       raw['Downtime_Start_Time'][i].ts,
+              start:    raw['Downtime_Start_Time'][i]?.value || '-',
+              end:      raw['Downtime_End_Time'][i]?.value || '-',
+              reason:   raw['Downtime_Reason_Code'][i]?.value || '-',
+              duration: raw['Downtime_Duration'][i]?.value || '-'
             });
           }
         }
@@ -169,24 +264,9 @@
       }
       tableBody.innerHTML = '';
       currentData.forEach((r,i) => {
-        let cols;
-        if (viewSelect.value === 'alerts') {
-          cols = [
-            i+1,
-            new Date(r.ts).toLocaleString(),
-            r.description,
-            r.code,
-            r.level
-          ];
-        } else {
-          cols = [
-            i+1,
-            new Date(r.start).toLocaleString(),
-            new Date(r.end).toLocaleString(),
-            r.reason,
-            r.duration
-          ];
-        }
+        const cols = viewSelect.value === 'alerts'
+          ? [i+1, new Date(r.ts).toLocaleString(), r.description, r.code, r.level]
+          : [i+1, new Date(r.start).toLocaleString(), new Date(r.end).toLocaleString(), r.reason, r.duration];
         const row = `<tr>${cols.map(c => `<td>${c}</td>`).join('')}</tr>`;
         tableBody.insertAdjacentHTML('beforeend', row);
       });
@@ -198,20 +278,16 @@
         mostFreqEl.textContent = '-';
         return;
       }
-      // pick the field to tally
       const key = viewSelect.value === 'alerts' ? 'code' : 'reason';
       const freq = {};
-      currentData.forEach(r => {
-        const v = r[key] || '-';
-        freq[v] = (freq[v]||0) + 1;
-      });
+      currentData.forEach(r => freq[r[key]] = (freq[r[key]]||0) + 1);
       const [val, count] = Object.entries(freq).sort((a,b)=>b[1]-a[1])[0];
       mostFreqEl.textContent = `${val} (${count} times)`;
     }
 
     function toggleView() {
-      const t = document.getElementById('tableView');
-      const c = document.getElementById('chartView');
+      const t   = document.getElementById('tableView');
+      const c   = document.getElementById('chartView');
       const btn = document.getElementById('toggleBtn');
       if (t.style.display === 'none') {
         t.style.display = 'block';
@@ -227,42 +303,40 @@
 
     function drawPareto() {
       if (!currentData.length) return;
-      const key = viewSelect.value === 'alerts' ? 'code' : 'reason';
-      const freq = {};
+      const key     = viewSelect.value === 'alerts' ? 'code' : 'reason';
+      const freq    = {};
       currentData.forEach(r => freq[r[key]] = (freq[r[key]]||0) + 1);
       const dataArr = Object.entries(freq).sort((a,b)=>b[1]-a[1]);
-      const labels = dataArr.map(d=>d[0]), counts = dataArr.map(d=>d[1]);
-      const cumulative = counts.reduce((a,v,i)=>{ a.push((a[i-1]||0)+v); return a; }, []);
-      const pct = cumulative.map(v=>v/cumulative.slice(-1)[0]*100);
+      const labels  = dataArr.map(d=>d[0]), counts = dataArr.map(d=>d[1]);
+      const cum     = counts.reduce((a,v,i)=>{ a.push((a[i-1]||0)+v); return a; }, []);
+      const pct     = cum.map(v=>v / cum.slice(-1)[0] * 100);
 
-      const trace1 = { x: labels, y: counts, type:'bar', name:'Frequency' };
-      const trace2 = { x: labels, y: pct, yaxis:'y2', type:'scatter', mode:'lines+markers', name:'Cumulative %' };
-      const layout = {
-        yaxis2:{ overlaying:'y', side:'right', range:[0,100] },
-        margin:{ t:40 }
-      };
-      Plotly.newPlot('paretoChart', [trace1,trace2], layout);
+      const trace1 = { x: labels, y: counts, type: 'bar', name: 'Frequency' };
+      const trace2 = { x: labels, y: pct, yaxis: 'y2', type: 'scatter', mode: 'lines+markers', name: 'Cumulative %' };
+      const layout = { yaxis2: { overlaying: 'y', side: 'right', range: [0,100] }, margin: { t: 40 } };
+
+      Plotly.newPlot('paretoChart', [trace1, trace2], layout);
     }
 
     function downloadCSV() {
-      const headers = viewSelect.value==='alerts'
+      const headers = viewSelect.value === 'alerts'
         ? ['Sr.No.','Time','Description','Code','Level']
         : ['Sr.No.','Start','End','Reason','Duration'];
       const rows = [headers].concat(
-        currentData.map((r,i) => (
-          viewSelect.value==='alerts'
+        currentData.map((r,i) =>
+          viewSelect.value === 'alerts'
             ? [i+1, new Date(r.ts).toLocaleString(), r.description, r.code, r.level]
             : [i+1, new Date(r.start).toLocaleString(), new Date(r.end).toLocaleString(), r.reason, r.duration]
-        ))
+        )
       );
-      const csv = rows.map(r=>r.join(',')).join('\n');
-      const blob = new Blob([csv], { type:'text/csv' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = viewSelect.value + '_data.csv';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      const csv   = rows.map(r => r.join(',')).join('\n');
+      const blob  = new Blob([csv], { type: 'text/csv' });
+      const link  = document.createElement('a');
+      link.href   = URL.createObjectURL(blob);
+      link.download = (viewSelect.value + '_data.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
   </script>
 
