@@ -193,14 +193,14 @@
     function getTelemetryKeys() {
       return viewSelect.value === 'alerts'
         ? ['Alarms']
-        : ['Downtime_Start_Time','Downtime_End_Time','Downtime_Reason_Code','Downtime_Duration'];
+        : ['Downtime_Start_Time','Downtime_End_Time','Downtime_Reason_Code','Downtime_Duration','Downtime_Description']; // +Description
     }
 
     function buildTableHead() {
       const mode = viewSelect.value;
       const headers = mode === 'alerts'
         ? ['Sr.No.','Time','Description','Code','Level']
-        : ['Sr.No.','Start Time','End Time','Reason Code','Duration(s)'];
+        : ['Sr.No.','Start Time','End Time','Reason Code','Description','Duration(s)']; // +Description
       tableHead.innerHTML = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
     }
 
@@ -243,7 +243,7 @@
               const parsedTs = new Date(tStr.replace(' ', 'T')).getTime();
               currentData.push({
                 ts: isNaN(parsedTs) ? (entry?.ts ?? Date.now()) : parsedTs,
-                description: it?.description ?? '-', 
+                description: it?.description ?? '-', // mapped
                 code: it?.code ?? '-',
                 level: '-'
               });
@@ -252,11 +252,12 @@
         } else {
           for (let i=0; i<len; i++) {
             currentData.push({
-              ts:       raw['Downtime_Start_Time'][i].ts,
-              start:    raw['Downtime_Start_Time'][i]?.value || '-',
-              end:      raw['Downtime_End_Time'][i]?.value || '-',
-              reason:   raw['Downtime_Reason_Code'][i]?.value || '-',
-              duration: raw['Downtime_Duration'][i]?.value || '-'
+              ts:         raw['Downtime_Start_Time'][i].ts,
+              start:      raw['Downtime_Start_Time'][i]?.value || '-',
+              end:        raw['Downtime_End_Time'][i]?.value || '-',
+              reason:     raw['Downtime_Reason_Code'][i]?.value || '-',
+              description:raw['Downtime_Description'][i]?.value || '-', // new field
+              duration:   raw['Downtime_Duration'][i]?.value || '-'
             });
           }
         }
@@ -279,7 +280,7 @@
       currentData.forEach((r,i) => {
         const cols = viewSelect.value === 'alerts'
           ? [i+1, new Date(r.ts).toLocaleString(), r.description, r.code, r.level]
-          : [i+1, new Date(r.start).toLocaleString(), new Date(r.end).toLocaleString(), r.reason, r.duration];
+          : [i+1, new Date(r.start).toLocaleString(), new Date(r.end).toLocaleString(), r.reason, r.description, r.duration]; // +Description
         const row = `<tr>${cols.map(c => `<td>${c}</td>`).join('')}</tr>`;
         tableBody.insertAdjacentHTML('beforeend', row);
       });
@@ -334,12 +335,12 @@
     function downloadCSV() {
       const headers = viewSelect.value === 'alerts'
         ? ['Sr.No.','Time','Description','Code','Level']
-        : ['Sr.No.','Start','End','Reason','Duration'];
+        : ['Sr.No.','Start','End','Reason','Description','Duration']; // +Description
       const rows = [headers].concat(
         currentData.map((r,i) =>
           viewSelect.value === 'alerts'
             ? [i+1, new Date(r.ts).toLocaleString(), r.description, r.code, r.level]
-            : [i+1, new Date(r.start).toLocaleString(), new Date(r.end).toLocaleString(), r.reason, r.duration]
+            : [i+1, new Date(r.start).toLocaleString(), new Date(r.end).toLocaleString(), r.reason, r.description, r.duration] // +Description
         )
       );
       const csv   = rows.map(r => r.join(',')).join('\n');
