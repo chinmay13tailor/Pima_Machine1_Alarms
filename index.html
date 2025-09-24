@@ -172,7 +172,6 @@
   <p class="error" id="errorMsg"></p>
 
   <script>
-    // Read JWT from URL, hard-code deviceId
     const urlParams = new URLSearchParams(window.location.search);
     const jwt       = urlParams.get('token');
     const deviceId  = '991cf500-661a-11f0-90f1-775fee303094';
@@ -193,7 +192,7 @@
 
     function getTelemetryKeys() {
       return viewSelect.value === 'alerts'
-        ? ['Alarm_Code','Alarm_Description','Alarm_Level']
+        ? ['Alarms']
         : ['Downtime_Start_Time','Downtime_End_Time','Downtime_Reason_Code','Downtime_Duration'];
     }
 
@@ -224,20 +223,34 @@
         );
         const json = await res.json();
 
-        // transpose into array of records
         const raw = {};
         getTelemetryKeys().forEach(k => raw[k] = json[k] || []);
         const len = raw[ Object.keys(raw)[0] ].length;
 
-        for (let i=0; i<len; i++) {
-          if (viewSelect.value === 'alerts') {
-            currentData.push({
-              ts:          raw['Alarm_Code'][i].ts,
-              description: raw['Alarm_Description'][i]?.value || '-',
-              code:        raw['Alarm_Code'][i]?.value || '-',
-              level:       raw['Alarm_Level'][i]?.value || '-'
-            });
-          } else {
+        if (viewSelect.value === 'alerts') {
+          const alarmsEntries = raw['Alarms'] || [];
+          for (let i = 0; i < alarmsEntries.length; i++) {
+            const entry = alarmsEntries[i];
+            let payload = entry?.value;
+
+            if (typeof payload === 'string') {
+              try { payload = JSON.parse(payload); } catch (_) { payload = []; }
+            }
+            if (!Array.isArray(payload)) payload = payload ? [payload] : [];
+
+            for (const it of payload) {
+              const tStr = it?.time || '';
+              const parsedTs = new Date(tStr.replace(' ', 'T')).getTime();
+              currentData.push({
+                ts: isNaN(parsedTs) ? (entry?.ts ?? Date.now()) : parsedTs,
+                description: '-',
+                code: it?.code ?? '-',
+                level: '-'
+              });
+            }
+          }
+        } else {
+          for (let i=0; i<len; i++) {
             currentData.push({
               ts:       raw['Downtime_Start_Time'][i].ts,
               start:    raw['Downtime_Start_Time'][i]?.value || '-',
